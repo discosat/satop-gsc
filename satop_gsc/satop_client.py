@@ -1,14 +1,29 @@
 import asyncio
 import json
+import traceback
 import typing
 import websockets
 from inspect import signature
+from typing import get_type_hints, get_args, get_origin
 from uuid import uuid4
 from websockets.asyncio.client import ClientConnection
+from websockets.typing import Data
+from pathlib import Path
+
+def split_origin_args(typ):
+    origin = typing.get_origin(typ)
+    args = typing.get_args(typ)
+
+    if origin is None:
+        origin = typ
+        args = None
+
+    return origin, args
 
 class SatopClient:
     responders: dict[str, callable] = dict()
     ws: ClientConnection
+    id: str | None = None
 
     def __init__(self, host, port=80, tls=False, api_path='/api/gs'):
         ws_proto, http_proto = ('wss', 'https') if tls else ('ws', 'http')
@@ -16,14 +31,35 @@ class SatopClient:
         base_path = f'{host}:{port}{api_path}'
         self.ws_url = f'{ws_proto}://{base_path}/ws'
         self.gsapi_url = f'{http_proto}://{base_path}'
-    
-    async def connect(self):
-        self.ws = await websockets.connect(self.ws_url)
 
-        await self.ws.send(json.dumps({
-            'type': 'hello',
-            'name': 'CSH Client'
-        }))
+        self.id_file = Path(__file__).parent.resolve() / '.id'
+        if self.id_file.exists():
+            with open(self.id_file) as f:
+                self.id = f.read()
+
+
+    async def connect(self, timeout = 10):
+        async with asyncio.timeout(timeout):
+            self.ws = await websockets.connect(self.ws_url)
+
+            hello = {
+                'type': 'hello',
+                'name': 'CSH Client'
+            }
+            if self.id:
+                hello['id'] = self.id
+
+            await self.ws.send(json.dumps(hello))
+
+            connect_message = json.loads(await self.ws.recv())
+            assert connect_message['message'] == 'OK'
+
+            if self.id:
+                assert connect_message['id'] == self.id
+            else:
+                self.id = connect_message['id']
+                with open(self.id_file, 'w+') as f:
+                    f.write(self.id)
     
     async def disconnect(self):
         await self.ws.close(1001)
@@ -38,20 +74,28 @@ class SatopClient:
             'message_id': str(uuid4()),
             'in_response_to': in_response_to,
             'error': {
-                'code': code,
-                'details': details
+                'status': code,
+                'detail': details
             }
         }
     
     async def run(self):
         try:
             while True:
-                msg = json.loads(await self.ws.recv())
+                raw_msg = await self.ws.recv()
+                msg = json.loads(raw_msg)
                 print(f'ws > {msg}')
 
                 req_id = msg.get('request_id')
                 data = msg.get('data', dict())
-                dtype = data.get('type')
+                dtype = msg.get('type', data.get('type'))
+                extra_frames = msg.get('frames', 0)
+                data_frames = []
+                print(f'Will try to get additional {extra_frames} frames')
+                for i in range(extra_frames):
+                    data_frames.append(await self.ws.recv())
+                    print(f'\r{i+1}/{extra_frames}', end='')
+                print()
 
                 if req_id is None or dtype is None:
                     response = self.error_message('')
@@ -62,21 +106,38 @@ class SatopClient:
                         response = self.error_message(req_id, 404, 'Method not found')
                     else:
                         try:
-                            func_parameters = signature(func).parameters
-                            match len(func_parameters):
-                                case 0:
-                                    response_data = func()
-                                case 1:
-                                    response_data = func(data)
-                                case _:
-                                    response_data = func(**data)
+                            type_hints = { arg: annotation.annotation for arg,annotation in signature(func).parameters.items() }
+                            if 'return' in type_hints:
+                                type_hints.pop('return')
+                            args = {}
+                            for arg, hint in type_hints.items():
+                                if arg in data:
+                                    args[arg] = data[arg]
+                                    print(f'{arg} is named')
+                                    continue
+                                arg_type, arg_type_args = split_origin_args(hint)
+                                if arg_type == list and arg_type_args == (Data,):
+                                    args[arg] = data_frames
+                                    print(f'{arg} is data_frames')
+                                elif arg_type == Data:
+                                    args[arg] = raw_msg
+                                    print(f'{arg} is raw')
+                                elif arg_type == dict:
+                                    args[arg] = data
+                                    print(f'{arg} is data')
+                                else:
+                                    print(f'{arg} is none: {split_origin_args(hint)}')
+
+                            response_data = func(**args)
+
                             response = {
                                 'message_id': str(uuid4()),
                                 'in_response_to': req_id,
                                 'data': response_data
                             }
-                        except:
-                            response = self.error_message(req_id)
+                        except Exception as e:
+                            response = self.error_message(req_id, details=f'{e}, {e.__traceback__.tb_frame}|{e.__traceback__.tb_lasti}|{e.__traceback__.tb_lineno}')
+                            traceback.print_exception(e)
                 print(f'ws < {response}')
                 await self.ws.send(json.dumps(response))
         finally: 
