@@ -36,6 +36,10 @@ class SatopClient:
         if self.id_file.exists():
             with open(self.id_file) as f:
                 self.id = f.read()
+        
+        @self.add_responder('/methods')
+        def get_respond_methods():
+            return list(self.responders.keys())
 
 
     async def connect(self, timeout = 10):
@@ -89,9 +93,11 @@ class SatopClient:
                 req_id = msg.get('request_id')
                 data = msg.get('data', dict())
                 dtype = msg.get('type', data.get('type'))
+                print(f'Got request with type {dtype}')
                 extra_frames = msg.get('frames', 0)
                 data_frames = []
-                print(f'Will try to get additional {extra_frames} frames')
+                if extra_frames > 0:
+                    print(f'Will try to get additional {extra_frames} frames')
                 for i in range(extra_frames):
                     data_frames.append(await self.ws.recv())
                     print(f'\r{i+1}/{extra_frames}', end='')
