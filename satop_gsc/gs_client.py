@@ -1,5 +1,7 @@
+import argparse
 import asyncio
 import dataclasses
+import datetime
 
 from websockets import Data
 from satop_client import SatopClient
@@ -8,7 +10,13 @@ from csh import csh_wrapper as csh
 from ground_station_setup import get_available_sattelites, get_gs_location
 from observations import get_passes
 
-client = SatopClient('localhost', 7890)
+parser = argparse.ArgumentParser()
+parser.add_argument('--host', default='localhost')
+parser.add_argument('--port', type=int, default=7890)
+
+args = parser.parse_args()
+
+client = SatopClient(args.host, args.port)
 
 @client.add_responder('echo')
 def echo_responder(data:dict):
@@ -43,8 +51,18 @@ def observe_responder(satellite, min_degree=30, delta_days=7):
         'observations': list(map(lambda o: dataclasses.asdict(o), get_passes(satellite, min_degree, delta_days)))
     }
 
-# @client.add_responder('schedule_transmission')
-# def schedule(satellite, script, )
+@client.add_responder('schedule_transmission')
+def schedule(time, satellite, dataframes: list[Data]):
+    dtime = datetime.datetime.fromisoformat(time)
+    satellites = get_available_sattelites()
+    if not satellite in satellites:
+        return {
+            'error': {
+                'status': 404,
+                'detail': 'satellite not found'
+            }
+        }
+
 
 @client.add_responder('test_frames')
 def observe_responder(dframes:list[str|bytes]):
