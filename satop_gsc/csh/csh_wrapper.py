@@ -207,3 +207,56 @@ def execute_script(lines: list[str]):
     print(out)
 
     return out, res
+
+class CSH:
+    slash
+    def __init__(self, slash_linewidth=64, slash_history=1024, debug=False):
+        self.slash = slashlib.slash_create(slash_linewidth, slash_history)
+        self.debug = debug
+    
+    def execute(self, cmd):
+        if self.debug:
+            print(f'csh < {cmd}')
+        pipe_out, pipe_in = os.pipe()
+        stdout_fileno = sys.stdout.fileno() # doesn't work in jupyter, where stdout is 39
+
+        # Copy stdout
+        stdout = os.dup(stdout_fileno)
+        # Replace stdout with our write pipe
+        os.dup2(pipe_in, stdout_fileno)
+
+        res = slashlib.slash_execute(self.slash, cmd.encode('utf-8'))
+        res = SLASH_RETURN(res)
+
+        libc.fflush(None)
+
+        out = b''
+        while True:
+            r, _, _ = select.select([pipe_out], [], [], 0)
+            if not r:
+                break
+            out += os.read(pipe_out, 1024)
+        
+        os.close(pipe_in)
+        os.close(pipe_out)
+        os.dup2(stdout, stdout_fileno)
+
+        if self.debug:
+            for l in out.split(b'\n'):
+                print(f'csh > {l.decode()}')
+
+        return out, res
+    
+    def execute_script(self,cmds):
+        ret = []
+        for cmd in cmds:
+            out, res = self.execute(cmd)
+            ret.append({
+                'in': cmd,
+                'out': out.decode(),
+                'return_code': {
+                    'name': ret.name,
+                    'value': ret.value
+                },
+            })
+        return ret
