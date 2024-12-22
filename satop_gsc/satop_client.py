@@ -5,7 +5,7 @@ import typing
 import websockets
 from inspect import signature
 from typing import get_type_hints, get_args, get_origin
-from uuid import uuid4
+from uuid import uuid4, UUID
 from websockets.asyncio.client import ClientConnection
 from websockets.typing import Data
 from pathlib import Path
@@ -23,7 +23,7 @@ def split_origin_args(typ):
 class SatopClient:
     responders: dict[str, callable] = dict()
     ws: ClientConnection
-    id: str | None = None
+    id: UUID | None = None
 
     def __init__(self, host, port=80, tls=False, api_path='/api/gs'):
         ws_proto, http_proto = ('wss', 'https') if tls else ('ws', 'http')
@@ -35,7 +35,7 @@ class SatopClient:
         self.id_file = Path(__file__).parent.resolve() / '.id'
         if self.id_file.exists():
             with open(self.id_file) as f:
-                self.id = f.read()
+                self.id = UUID(f.read())
         
         @self.add_responder('/methods')
         def get_respond_methods():
@@ -51,7 +51,7 @@ class SatopClient:
                 'name': 'CSH Client'
             }
             if self.id:
-                hello['id'] = self.id
+                hello['id'] = str(self.id)
 
             await self.ws.send(json.dumps(hello))
 
@@ -59,11 +59,11 @@ class SatopClient:
             assert connect_message['message'] == 'OK'
 
             if self.id:
-                assert connect_message['id'] == self.id
+                assert UUID(connect_message['id']) == self.id
             else:
-                self.id = connect_message['id']
+                self.id = UUID(connect_message['id'])
                 with open(self.id_file, 'w+') as f:
-                    f.write(self.id)
+                    f.write(str(self.id))
     
     async def disconnect(self):
         await self.ws.close(1001)
