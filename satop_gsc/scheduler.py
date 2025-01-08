@@ -3,6 +3,7 @@ import dataclasses
 import threading
 import time
 from csh.csh_wrapper import CSH
+from satop_api import SatopApi
 
 def utcnow():
     return datetime.datetime.now(datetime.timezone.utc)
@@ -14,14 +15,16 @@ class ScheduledElement:
     thread: threading.Timer
 
 class CSHScheduler:
+    api: SatopApi
     csh_busy:bool = False
     csh: CSH
     scheduled:dict[str, ScheduledElement]
 
 
-    def __init__(self, csh:CSH):
+    def __init__(self, csh:CSH, api:SatopApi):
         self.scheduled = dict()
         self.csh = csh
+        self.api = api
         self.load()
         pass
 
@@ -42,7 +45,8 @@ class CSHScheduler:
         delta_time = (dt.seconds * (10**6) + dt.microseconds)/(10**6)
         print(f'Adding {id} to schedule to run at {start_time} (in {delta_time} s)')
 
-        t = threading.Timer(delta_time, self.execute_commands, args=(commands,id))
+        _, artifact_sha1 = self.api.log_received_commands(commands, start_time.timestamp())
+        t = threading.Timer(delta_time, self.execute_commands, args=(commands,id,artifact_sha1))
         ev = ScheduledElement(
             time = start_time,
             csh = commands,
@@ -64,27 +68,38 @@ class CSHScheduler:
             s.thread.cancel()
             self.scheduled.pop(id)
 
-    def execute_commands(self, commands:list[str], id:str):
+    def execute_commands(self, commands:list[str], id:str, artifact_hash:str):
         expected_start = self.scheduled.get(id).time
         t1 = utcnow()
+        dcall = t1-expected_start
 
         print(f'executing {id}')
         while self.csh_busy:
             time.sleep(1)
 
+        results = []
+
         self.csh_busy = True
         print(f'{id}')
         t2 = utcnow()
+        dstart = t2-expected_start
+        self.api.log_executed_commands_start(artifact_hash, dstart)
         for cmd in commands:
-            self.csh.execute(cmd)
+            out, ret = self.csh.execute(cmd)
+            results.append({
+                'in': cmd,
+                'out': out.decode(),
+                'return_code': {
+                    'name': ret.name,
+                    'value': ret.value
+                },
+            })
         self.csh_busy = False
         t3 = utcnow()
-
-        dcall = t1-expected_start
-        dstart = t2-expected_start
         dexec = t3-t2
 
         print(f'{id} | Called {dcall} after scheduled | Started {dstart} after scheduled | Took {dexec}')
+        self.api.log_executed_commands_finish(artifact_hash, results, dexec)
 
         self.scheduled.pop(id)
 

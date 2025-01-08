@@ -12,26 +12,34 @@ from csh.csh_wrapper import CSH
 from ground_station_setup import get_available_sattelites, get_gs_location
 from observations import get_passes
 from scheduler import CSHScheduler
+from satop_api import SatopApi
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--host', default='localhost')
 parser.add_argument('--port', type=int, default=7890)
+parser.add_argument('--https', type=bool, default=False)
 
 args = parser.parse_args()
 
 client = SatopClient(args.host, args.port)
+api = SatopApi(client.id, args.host, args.port, https=args.https)
 csh = CSH(debug=True)
-scheduler = CSHScheduler(csh)
+scheduler = CSHScheduler(csh, api)
 
 
 @client.add_responder('echo')
 def echo_responder(data:dict):
+    api.log_received_echo(data)
     return data
 
 @client.add_responder('csh')
 def csh_responder(data:dict):
     script = data.get('script', [])
-    return csh.execute_script(script)
+    _, artifact_sha1 = api.log_received_commands(script)
+    api.log_executed_commands_start(artifact_sha1)
+    res = csh.execute_script(script)
+    api.log_executed_commands_finish(artifact_sha1, res)
+    return res
 
 @client.add_responder('station_details')
 def sdr():
@@ -97,8 +105,6 @@ async def main():
 
     csh.execute('csp init -m "CSH Client"')
     csh.execute('ident')
-    scheduler.add(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=2), ['ping 1'], 'init1')
-    scheduler.add(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=2.2), ['ping 0'], 'init2')
 
     await client.run()
 
