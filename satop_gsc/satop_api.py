@@ -3,7 +3,7 @@ import requests
 import json
 import datetime
 from enum import Enum
-from typing import IO, Union
+from typing import IO, Optional, Union
 from uuid import uuid4, UUID
 from pydantic import BaseModel, Field
 
@@ -47,9 +47,12 @@ class EventBase(BaseModel):
     descriptor: str
     relationships: list[Union[EventSubjectRelationship, EventObjectRelationship, Triple]]
 
+class TimestampedEvent(EventBase):
+    timestamp: float = Field(default_factory=lambda:datetime.datetime.now(datetime.timezone.utc).timestamp())
+
 class Event(EventBase):
     id: str
-    timestamp: int
+    timestamp: float
 
 class ArtifactUploadResponse(BaseModel):
     name: str
@@ -61,7 +64,7 @@ class SatopApi:
     auth_token: str = None
 
     def __init__(self, gs_id:UUID, host:str, port:str=None, base_path:str='/api', https:bool=True):
-        self.base_url = f"{'https' if https else 'http'}://{host}{':'+port if port is not None else ''}{base_path}"
+        self.base_url = f"{'https' if https else 'http'}://{host}{f':{port}' if port is not None else ''}{base_path}"
         self.entity = Entity(type=EntityType.system, id=str(gs_id))
         self._executed_at_relation = EventObjectRelationship(
                 predicate=Predicate(descriptor='executedAt'), 
@@ -109,7 +112,7 @@ class SatopApi:
         return self._log_new_artifact_raw(b_data, filename, mime_type='application/json')
 
     def _log_event(self, event:EventBase):
-        response = requests.post(self.base_url+'/log/events', headers=self._get_headers(), json=event.model_dump_json())
+        response = requests.post(self.base_url+'/log/events', headers=self._get_headers(), json=event.model_dump())
 
         if response.status_code != 200:
             print(response.status_code)
@@ -141,23 +144,29 @@ class SatopApi:
             ))
         return self._log_event(event), sha1
 
-    def log_executed_commands_start(self, script_sha1:str, timing_deltastart:datetime.timedelta):
-        event = Event(descriptor='startedCommandExecution',relationships=[
-            self._executed_at_relation,
-            EventObjectRelationship(predicate=Predicate(descriptor='content'), object=Artifact(sha1=script_sha1))
-        ])
+    def log_executed_commands_start(self, script_sha1:str, timing_deltastart:datetime.timedelta=None):
+        event = TimestampedEvent(
+            descriptor='startedCommandExecution',
+            relationships=[
+                self._executed_at_relation,
+                EventObjectRelationship(predicate=Predicate(descriptor='content'), object=Artifact(sha1=script_sha1))
+            ]
+        )
         if timing_deltastart:
             event.relationships.append(EventObjectRelationship(predicate=Predicate(descriptor='executionScheduleDelay'), 
                                                                object=str(timing_deltastart)))
         return self._log_event(event)
 
-    def log_executed_commands_finish(self, script_sha1:str, result:list, timing_runtime:datetime.timedelta):
+    def log_executed_commands_finish(self, script_sha1:str, result:list, timing_runtime:datetime.timedelta=None):
         result_sha1 = self._log_new_artifact_json(result)
-        event = Event(descriptor='finishedCommandExecution',relationships=[
-            self._executed_at_relation,
-            EventObjectRelationship(predicate=Predicate(descriptor='content'), object=Artifact(sha1=script_sha1)),
-            EventObjectRelationship(predicate=Predicate(descriptor='result'), object=Artifact(sha1=result_sha1))
-        ])
+        event = TimestampedEvent(
+            descriptor='finishedCommandExecution',
+            relationships=[
+                self._executed_at_relation,
+                EventObjectRelationship(predicate=Predicate(descriptor='content'), object=Artifact(sha1=script_sha1)),
+                EventObjectRelationship(predicate=Predicate(descriptor='result'), object=Artifact(sha1=result_sha1))
+            ]
+        )
         if timing_runtime:
             event.relationships.append(EventObjectRelationship(predicate=Predicate(descriptor='executionRuntime'), 
                                                                object=str(timing_runtime)))

@@ -114,6 +114,7 @@ class SatopClient:
                         try:
                             type_hints = { arg: annotation.annotation for arg,annotation in signature(func).parameters.items() }
                             if 'return' in type_hints:
+                                # Remove return value annotation
                                 type_hints.pop('return')
                             args = {}
                             for arg, hint in type_hints.items():
@@ -121,7 +122,7 @@ class SatopClient:
                                     args[arg] = data[arg]
                                     print(f'{arg} is named')
                                     continue
-                                arg_type, arg_type_args = split_origin_args(hint)
+                                arg_type, arg_type_args = split_origin_args(hint) # e.g. list[str]  =>  list, (str,)
                                 if arg_type == list and arg_type_args == (Data,):
                                     args[arg] = data_frames
                                     print(f'{arg} is data_frames')

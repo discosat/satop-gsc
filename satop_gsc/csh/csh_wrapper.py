@@ -255,8 +255,8 @@ class CSH:
                 'in': cmd,
                 'out': out.decode(),
                 'return_code': {
-                    'name': ret.name,
-                    'value': ret.value
+                    'name': res.name,
+                    'value': res.value
                 },
             })
         return ret
