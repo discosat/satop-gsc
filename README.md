@@ -35,7 +35,7 @@ cd csh
 python3 satop_gsc/gs_client.py --host [platform host IP] --port [platform port (default 7890)]
 ```
 
-Note that ```[platform host IP]``` and ``[platform port (default 7890)]``` are the the IP and port where the SatOP platform is accessible.
+Note that `[platform host IP]` and `[platform port (default 7890)]` are the the IP and port where the SatOP platform is accessible.
 
 
 ## Run in Docker
@@ -48,4 +48,4 @@ docker build -t satop_gs .
 docker run --name satop_gs satop_gs --host [platform host IP] --port [platform port (default 7890)]
 ```
 
-Note that ```[platform host IP]``` and ``[platform port (default 7890)]``` are the the IP and port where the SatOP platform is accessible.
+Note that `[platform host IP]` and `[platform port (default 7890)]` are the the IP and port where the SatOP platform is accessible.
