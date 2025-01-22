@@ -3,6 +3,9 @@ The SatOP Ground Station Client (SatOP-GSC) is a linux based ground station impl
 
 To run the SatOP-GSC on OS'es differing from linux, a dockerfile is included to build an image of this repo.
 
+## Run locally (linux distro)
+MISSING!
+
 ## Run in docker
 Open a terminal window and move into your copy of this directory, and run the following two commands: 
 ```
