@@ -1,5 +1,5 @@
 # satop-gsc
-The SatOP Ground Station Client (SatOP-GSC) is a linux based ground station implementation for the SatOP Platform (ref satop repo). The SatOP-GSC has been developed with CSP (insert ref?) in mind, in the form of the AutoCSH module (is it called this?).
+The SatOP Ground Station Client (SatOP-GSC) is a linux based ground station implementation for the [SatOP Platform](https://github.com/discosat/satop-platform). The SatOP-GSC has been developed with [CSH](https://github.com/discosat/csh) in mind, and CSH commands can be scheduled to run in the future.
 
 To run the SatOP-GSC on OS'es differing from linux, a dockerfile is included to build an image of this repo.
 
